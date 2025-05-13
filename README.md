@@ -1,8 +1,7 @@
 # PRO-Surv
 
 Code and materials for the paper:  
-[**Patient-reported outcomes and survival analysis of chronic obstructive pulmonary disease patients: A two-stage joint modelling approach**](https://raco.cat/index.php/SORT/article/view/431617)  
-Galán-Arcicollar, C., Najera-Zuloaga, J., & Lee, D.-J. (2024). *SORT*, 48(2), 155–182. https://doi.org/10.57645/20.8080.02.17
+[**Patient-reported outcomes and survival analysis of chronic obstructive pulmonary disease patients: A two-stage joint modelling approach**](https://raco.cat/index.php/SORT/article/view/431617) Galán-Arcicollar, C., Najera-Zuloaga, J., & Lee, D.-J. (2024). *SORT*, 48(2), 155–182. https://doi.org/10.57645/20.8080.02.17
 
 ## Overview
 
