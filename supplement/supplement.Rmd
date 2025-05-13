@@ -1,0 +1,202 @@
+---
+title: 'Supplementary material:'
+author:
+- "Cristina Galán-Arcicollar$^{1,2}$"
+- "Josu Najera-Zuloaga$^2$"
+- "Dae-Jin Lee$^{1,3}$"
+date: $^1$\small Applied Statistics Research Line, Basque Center for Applied Mathematics,
+  Bizkaia, Spain \newline $^2$Department of Mathematics, University of the Basque
+  Country UPV/EHU, Bizkaia, Spain \newline $^3$School of Science and Technology, IE
+  University, Madrid, Spain\newline \newline \newline
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    citation_package: natbib
+subtitle: "Patient-reported outcomes and survival analysis of chronic obstructive
+  pulmonary disease patients: a two-stage joint modelling approach"
+bibliography: references.bib
+biblio-style: apalike
+link-citations: yes
+header-includes: \renewcommand{\and}{\\}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\normalsize
+This document contains supplementary material to the paper “Patient-reported outcomes and survival analysis of chronic obstructive pulmonary disease patients: a two-stage joint modelling approach”. A description of how to obtain the simulated data sets is given, as well as the use of the three methodologies detailed in the article. We named them: TSBB (Two-Stage Beta-Binomial), JM (Joint Model with the normal longitudinal assumption) and TVCM (Time-Varying Cox Model).
+
+\appendix
+\section{Generation of data sets}
+
+In our simulation study, we considered a sample of 250 individuals with a maximum of 4 measurements. We fist simulated these measurement times by generating the first one (baseline) with \texttt{runif(250,0,1.5)}, assuming subjects uniform entering into the study during the first year and a half.
+Then, the second measurement time is one year apart from the first, as well as the third from the second. Finally, the forth measurement time is three years apart from the third measurement. We also generated the random effects by fixing standard deviations ($\sigma_{u_{0}}$, $\sigma_{u_{1}}$), detailed in Table 5 of the paper, with \texttt{rnorm} for random intercept and slope values of each subject. Once measurement times and random effects are generated, we incorporated them into the linear predictor as in Equation 1 of the paper. Then, we fixed the vector that includes the linear predictors and also fixed the maximum score number ($nTrial$) to compute the probability parameter by solving Equation 1 of the paper. 
+
+We generated for each subject the maximum of four measurements of the longitudinal variable, i.e., a total of 1000 random sample by using \texttt{rBB} function from \texttt{PROreg} R-package. To that aim, we included the fixed computed vector of probabilities, the fixed maximum score (nTrial) according to the scnario and the dispersion parameter according to each sub-scenario. The simulated longitudinal data set, called $data$, has the following form:
+
+```{r fix parameters, echo=FALSE, message=FALSE}
+library(survival)
+library(PROreg)
+library(JM)
+
+library(dplyr)
+library(plyr)
+set.seed(99)
+
+nSim<-200#número de simulaciones
+nRand<-250 #número de individuos
+
+nMeas<-4
+nTrial<-8
+
+
+beta<-c(0.4,-0.15)
+sigmau<-1.5
+sigmav<-0.3
+phi<-0.5
+alpha<- -0.1
+
+z <- as.factor(1:nRand)
+x0<-runif(nRand,0,1.5)
+dat=data.frame(z,x0)
+dat$x1<-dat$x0+1
+dat$x2<-dat$x1+1
+dat$x3<-dat$x2+3
+
+
+unorm <- rnorm(nRand,0,sigmau) # Simulate the random effects
+vnorm<-rnorm(nRand,0,sigmav) 
+
+weibull<-c(0.1,1.6)
+cens<-0.1
+
+```
+```{r generated data, echo=FALSE}  
+  nObs<-nMeas*nRand #Numero de mediciones totales
+  dat.long<-tidyr::pivot_longer(dat, cols=2:5, names_to = "meas",values_to = "time" )
+  X <- model.matrix(~time,data=dat.long) #matrices del modelo longitudinal
+  Z.i <- model.matrix(~z-1,data=dat.long)
+  Z.t<- model.matrix(~z:time-1,data=dat.long)
+  Z<-cbind(Z.i,Z.t)
+  p<-1/(1+exp(-(X%*%beta+Z%*%c(unorm,vnorm))))
+  y<-PROreg::rBB(nObs,nTrial,p,phi)
+  data<-cbind(dat.long,y)
+```
+```{r}
+head(data)
+```
+where $z$ column indicates the subject, $meas$ the number of measurement, $time$ the measurement time and $y$ the longitudinal response.
+
+Next, we performed the time-to-event times $T^{*}_{i}$ for each subject following the method detailed in @Crowther2013. We defined the risk function by setting weibull baseline hazard with fixed parameters and included the fitted value formula according to the longitudinal model set in Equation 4.
+It was also considered random censoring of 10\% of patients chosen by   \texttt{sample(1:250,floor(0.1*250))}.  The censoring times for the censored subjects were generated with uniform distribution between the subject entering time and the minimum of its last observation that can be the last measurement time or the time-to-event time.
+Finally, the observed time for each subject was taken as the minimum between the last measurement time, the time-to-event and the random censoring time. Status indicator was defined as 1 when the observed time equals the time-to-event time.
+The simulated survival data set $surv.data$ has the following form:
+```{r survival times, echo=FALSE}
+      tiempos<-c()
+      for(j in 1:nRand){
+        h<-function(s){
+          h <- weibull[1]*weibull[2]*s^(weibull[2]-1)*exp(alpha*(nTrial/(1+exp(-(beta[1]+beta[2]*s+unorm[j]+vnorm[j]*s)))))
+          return(h)}
+        haz<-function(t){
+          exp(-integrate(h,dat$x0[j],t)$value)-runif(1)}
+        tiempos<-c(tiempos,uniroot(haz, c(0,300))$root)
+      }
+      tcens<-tiempos
+      censor<-sample(1:nRand,floor(cens*nRand)) #los individuos censurados si o si
+      tcens[censor]<-runif(floor(cens*nRand),dat[censor,]$x0,pmin(tiempos,dat[,ncol(dat)])[censor])  #El tiempo de censura de estos individuos que se genera entre su entrada y su ultimo tiempo observado (ultima obs o muerte)
+
+      obstime<-pmin(tiempos,tcens,dat[,ncol(dat)]) #Todos los tiempos finalmente observados
+      status<-ifelse(obstime==tiempos,1,0) #Status acorde a los tiempos observados
+      surv.data<-cbind(1:250,obstime,status)
+      colnames(surv.data)<-c("z","obstime","status")
+```
+
+```{r}
+head(surv.data)
+```
+
+Longitudinal markers taken later than the observed time were disregarded and we consider for the parameters estimation in the three methodologies the observed data $obsdata$.
+```{r obsdata,echo=FALSE}
+obsdata<-dplyr::bind_rows(lapply(1:250, function(i) data[which(data$z==i&data$time<=obstime[i]),]))  #datos observados longitudinales 
+```
+
+\section{Usage of the compared methodologies}
+\subsection{Two-Stage Beta-Binomial performance} 
+The fist step in the TSBB methodology consisted on fitting the longitudinal model with \texttt{BBmm} function from \texttt{PROreg} R-package (@PROreg).
+We modeled the $Z$ matrix composed by the random structure of the model.
+```{r BBmm, eval=FALSE}
+BB<- PROreg::BBmm(fixed.formula = y~time,Z=Z,nRandComp
+                  =c(250,250),m=nTrial,data=obsdata,maxiter = 100,show = TRUE)
+```
+
+Once the longitudinal parameter estimation is performed, we computed the fitted values to include them into the classic Cox Model using \texttt{coxph} from \texttt{survival} R-package (@survival-book).
+```{r fitted values, eval=FALSE}
+  X<-cbind(1,obstime)
+  Z.i<-model.matrix(~-1+as.factor(1:250))
+  Z.t<-model.matrix(~-1+as.factor(1:250):obstime)
+  Z.<- cbind(Z.i,Z.t)
+  
+  etaY<-X%*%BB$fixed.coef+Z.%*%BB$random.coef #estimated linear predictor
+  exY<-nTrial*exp(etaY)/(1+exp(etaY)) #estimated value
+
+  TSBB<-coxph(Surv(obstime,status)~exY, data = surv.data)
+```
+
+\subsection{Joint Modelling normality-based performance}
+To perform the full likelihood joint modelling methodology with normality assumption for the longitudinal data, we used \texttt{jointModel} function from \texttt{JM} R-package (@Rizopoulos2010).
+First, we set the longitudinal and survival models with \texttt{lme} and \texttt{coxph} functions from \texttt{nlme} and \texttt{survival} R packages.
+
+```{r JM1, eval=FALSE}
+fitlme<-lme(y~time, random=~time|z,data=obsdata)
+coxFit <-coxph(Surv(obstime,status)~1, data = surv.data,x = TRUE)
+```
+Finally, we couple both models into the \texttt{jointModel} function.
+```{r JM2, eval=FALSE}
+JM<-JM::jointModel(fitlme,coxFit,timeVar = "time", method = "piecewise-PH-aGH")
+```
+\subsection{Time-Varying Cox Model performance}
+
+To perform the Time-Varying Cox methodology, it is necessary to build a data set with the intervals according to the time dependent measurements. This data set was performed with \texttt{tmerge} function from \texttt{survival} R-package.
+
+First we compute the wide spread data with spread function from tydyr R-package. The result is 
+```{r TVCMdata }
+ wide <- tidyr::spread(obsdata[,-4], key = meas, value = time)
+ head(wide)
+```
+
+Then, we compute the data in form of intervals according to \texttt{[tstart,tstop)} form to include the intervals into the \texttt{coxph} function. We got the following data set by using \texttt{tmerge}:
+```{r, echo=FALSE}
+dat.tvcm<-tmerge(data1=wide, data2=wide, id=z, death = event(obstime+0.0001,status))
+
+for (i in 0:(max(count(obsdata$z)$freq)-1)) {
+	meas <- as.symbol(paste("x", i,sep = ""))
+	dat.tvcm<- tmerge(dat.tvcm, wide, id=z, measure = event(wide[[meas]]))
+}
+```
+
+```{r, echo=FALSE}
+rownames(dat.tvcm) <- NULL
+```
+
+
+```{r}
+head(dat.tvcm)
+```
+
+However, notice that subjects entry is not at time 0. By default this R function generates the first interval with $tstart=0$, then, we delete this row to adapt the data set and finally we include the observed longitudinal responses taken at $tstart$.
+
+```{r}
+dat.tvcm<-dat.tvcm[-which(dat.tvcm$tstart==0),]
+dat.tvcm$y<-obsdata$y
+```
+Finally, we used the \texttt{coxph} function from \texttt{survival} R package in its extended formulation including the intervals.
+
+```{r, eval=FALSE}
+TVCM<-coxph(Surv(tstart,tstop,death)~y, data=dat.tvcm, id=z)
+```
+
+# References
+
+<div id="refs"></div>
