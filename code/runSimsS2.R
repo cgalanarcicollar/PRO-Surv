@@ -8,7 +8,7 @@ source("Simulation_function.R")
 #####################################################
 
 
-nSim<-2
+nSim<-250
 nRand<-200  
 
 nMeas<-4
